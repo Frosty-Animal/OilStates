@@ -1,1 +1,2 @@
-REAME WILL COME LATER
+Open with visula studio code:
+Dont download any extentions yet
