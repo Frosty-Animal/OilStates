@@ -22,7 +22,6 @@ CCW_Direction = 1
 Circle_Positions = (dist1,dist2,dist3,dist4)
 Pulse_width = .000003 # PWM speed
 Belt_Stopped = 37 # Pin Number
-dist1
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DirPin_1, GPIO.OUT)
