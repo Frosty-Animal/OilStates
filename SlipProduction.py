@@ -102,7 +102,7 @@ def Pickup():
             if i < PickupSteps3:
                 GPIO.output(StepPin_3, GPIO.HIGH)
         
-            time.sleep(Pulse_width)  # Control speed
+            time.sleep(Pulse_width) 
             
             GPIO.output(StepPin_1, GPIO.LOW)
             GPIO.output(StepPin_2, GPIO.LOW)
