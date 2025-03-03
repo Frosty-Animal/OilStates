@@ -46,7 +46,10 @@ def main():
             # Step 3: Use coordinates to Pickup and Place corks
             # Step 4: Check to make sure Task is complete from this and glueing station
             # Reapeat
-            
+
+def virtual_pwm():
+    # use PigPio Library for virtual pwm implementation.
+
 def home(Homed):
     
     if(LimitSwitch_M1 == 1 & LimitSwitch_M2 == 1 & LimitSwitch_M3 == 1):
