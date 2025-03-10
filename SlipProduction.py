@@ -4,7 +4,7 @@ from picamera2 import Picamera2
 import time
 import pigpio
 import RPi.GPIO as GPIO
-
+import threading
 
 LimitSwitch_M1 = 25 # Pin Number
 LimitSwitch_M2 = 24 # Pin Number
@@ -25,6 +25,7 @@ PickupSteps1 = 0 # change to some predeeturmined amount(Need to do fine tuning)
 PickupSteps2 = 0 # change to some predeeturmined amount(Need to do fine tuning)
 PickupSteps3 = 0 # change to some predeeturmined amount(Need to do fine tuning)
 counter = 0
+
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DirPin_1, GPIO.OUT)
 GPIO.setup(StepPin_1, GPIO.OUT)
@@ -32,6 +33,8 @@ GPIO.setup(DirPin_2, GPIO.OUT)
 GPIO.setup(StepPin_2, GPIO.OUT)
 GPIO.setup(DirPin_3, GPIO.OUT)
 GPIO.setup(StepPin_3, GPIO.OUT)
+pi = pigpio.pi()
+pi.set_PWM_frequency(StepPin_3, 500)
 
 def main():
     global Homed
@@ -39,7 +42,7 @@ def main():
         
         # Step 1: Home motors
         if not Homed:
-            Homed = home() 
+            Homed = home_all_motors() 
         else:
             # Step 2: Await belt to stop and get coordinates of holes
             if GPIO.input(Belt_Stopped): 
@@ -52,43 +55,41 @@ def main():
             # Step 3: Use coordinates to Pickup and Place corks
             # Step 4: Check to make sure Task is complete from this and glueing station
             # Reapeat 3 more times untill all 4 holes are plugged in
-            
-def home():
 
-    # Move all motors towards their limit switches
-    GPIO.output(DirPin_1, CCW_Direction)
-    GPIO.output(DirPin_2, CCW_Direction)
-    GPIO.output(DirPin_3, CCW_Direction)
+# Homing function for motors 1 and 2
+def home_motor(step_pin, dir_pin, limit_switch):
+    GPIO.output(dir_pin, 1)  # Set direction toward home
+    while GPIO.input(limit_switch) == 0:  
+        GPIO.output(step_pin, GPIO.HIGH)
+        time.sleep(Pulse_width)
+        GPIO.output(step_pin, GPIO.LOW)
+        time.sleep(Pulse_width)
 
-    homed_1, homed_2, homed_3 = False, False, False
+# Homing function for Motor 3 
+def home_motor_3():
+    GPIO.output(DirPin_3, 1)  
+    pi.set_PWM_dutycycle(StepPin_3, 128)  
 
-    while not (homed_1 and homed_2 and homed_3):
-        if not homed_1:
-            GPIO.output(StepPin_1, GPIO.HIGH)
-            time.sleep(Pulse_width)
-            GPIO.output(StepPin_1, GPIO.LOW)
-            time.sleep(Pulse_width)
-            if GPIO.input(LimitSwitch_M1):  
-                homed_1 = True
-        
-        if not homed_2:
-            GPIO.output(StepPin_2, GPIO.HIGH)
-            time.sleep(Pulse_width)
-            GPIO.output(StepPin_2, GPIO.LOW)
-            time.sleep(Pulse_width)
-            if GPIO.input(LimitSwitch_M2):
-                homed_2 = True
-        
-        if not homed_3:
-            GPIO.output(StepPin_3, GPIO.HIGH)
-            time.sleep(Pulse_width)
-            GPIO.output(StepPin_3, GPIO.LOW)
-            time.sleep(Pulse_width)
-            if GPIO.input(LimitSwitch_M3):
-                homed_3 = True
+    while GPIO.input(LimitSwitch_M3) == 0:  
+        time.sleep(0.01)  
 
-    Homed = True
-    return Homed
+    pi.set_PWM_dutycycle(StepPin_3, 0)  
+
+# Main homing function using threads
+def home_all_motors():
+    t1 = threading.Thread(target=home_motor, args=(StepPin_1, DirPin_1, LimitSwitch_M1))
+    t2 = threading.Thread(target=home_motor, args=(StepPin_2, DirPin_2, LimitSwitch_M2))
+    t3 = threading.Thread(target=home_motor_3)
+
+    # Start all threads simultaneously
+    t1.start()
+    t2.start()
+    t3.start()
+
+    # Wait for all threads to finish
+    t1.join()
+    t2.join()
+    t3.join()
 
 def Pickup():
     task_completed = False
