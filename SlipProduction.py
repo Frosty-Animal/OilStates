@@ -9,7 +9,6 @@ import RPi.GPIO as GPIO
 LimitSwitch_M1 = 25 # Pin Number
 LimitSwitch_M2 = 24 # Pin Number
 LimitSwitch_M3 = 23 # Pin Number
-Homed = False
 OperationComplete =  False
 StepPin_1 = 18 # Pin Number
 StepPin_2 = 12 # Pin Number
@@ -22,7 +21,10 @@ CCW_Direction = 1
 Circle_Positions = (dist1,dist2,dist3,dist4)
 Pulse_width = .000003 # PWM speed
 Belt_Stopped = 37 # Pin Number
-
+PickupSteps1 = 0 # change to some predeeturmined amount(Need to do fine tuning)
+PickupSteps2 = 0 # change to some predeeturmined amount(Need to do fine tuning)
+PickupSteps3 = 0 # change to some predeeturmined amount(Need to do fine tuning)
+counter = 0
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DirPin_1, GPIO.OUT)
 GPIO.setup(StepPin_1, GPIO.OUT)
@@ -32,44 +34,85 @@ GPIO.setup(DirPin_3, GPIO.OUT)
 GPIO.setup(StepPin_3, GPIO.OUT)
 
 def main():
-    while(true):
+    global Homed
+    while True:
         
         # Step 1: Home motors
-        if(homed == False):
-            home([LimitSwitch_M1, LimitSwitch_M2, LimitSwitch_M3])
-            homed = True
+        if not Homed:
+            Homed = home() 
         else:
             # Step 2: Await belt to stop and get coordinates of holes
-            if(Belt_Stopped == True):
+            if GPIO.input(Belt_Stopped): 
                 results = capture_and_detect()
                 print(results)
+            
+            while counter < 4:
+                Pickup()
+                Place()
             # Step 3: Use coordinates to Pickup and Place corks
             # Step 4: Check to make sure Task is complete from this and glueing station
-            # Reapeat
+            # Reapeat 3 more times untill all 4 holes are plugged in
+            
+def home():
 
-def virtual_pwm():
-    # use PigPio Library for virtual pwm implementation.
+    # Move all motors towards their limit switches
+    GPIO.output(DirPin_1, CCW_Direction)
+    GPIO.output(DirPin_2, CCW_Direction)
+    GPIO.output(DirPin_3, CCW_Direction)
 
-def home(Homed):
-    
-    if(LimitSwitch_M1 == 1 & LimitSwitch_M2 == 1 & LimitSwitch_M3 == 1):
-        Homed = True
-        return Homed
-    # Move motors untill limit switch's are hit
+    homed_1, homed_2, homed_3 = False, False, False
+
+    while not (homed_1 and homed_2 and homed_3):
+        if not homed_1:
+            GPIO.output(StepPin_1, GPIO.HIGH)
+            time.sleep(Pulse_width)
+            GPIO.output(StepPin_1, GPIO.LOW)
+            time.sleep(Pulse_width)
+            if GPIO.input(LimitSwitch_M1):  
+                homed_1 = True
+        
+        if not homed_2:
+            GPIO.output(StepPin_2, GPIO.HIGH)
+            time.sleep(Pulse_width)
+            GPIO.output(StepPin_2, GPIO.LOW)
+            time.sleep(Pulse_width)
+            if GPIO.input(LimitSwitch_M2):
+                homed_2 = True
+        
+        if not homed_3:
+            GPIO.output(StepPin_3, GPIO.HIGH)
+            time.sleep(Pulse_width)
+            GPIO.output(StepPin_3, GPIO.LOW)
+            time.sleep(Pulse_width)
+            if GPIO.input(LimitSwitch_M3):
+                homed_3 = True
+
+    Homed = True
+    return Homed
 
 def Pickup():
-    
-    # This will always be a fixed value in order to pickup cork
+    task_completed = False
     if(task_completed == False):
-        for _ in range(steps):
-            GPIO.output(StepPin_1, GPIO.HIGH)
-            time.sleep(Pulse_width)  
+        Totalsteps = max(PickupSteps1,PickupSteps2,PickupSteps3)
+        for i in range(Totalsteps):
+            if i < PickupSteps1:
+                GPIO.output(StepPin_1, GPIO.HIGH)
+            if i < PickupSteps2:
+                GPIO.output(StepPin_2, GPIO.HIGH)
+            if i < PickupSteps3:
+                GPIO.output(StepPin_3, GPIO.HIGH)
+        
+            time.sleep(Pulse_width) 
+            
             GPIO.output(StepPin_1, GPIO.LOW)
+            GPIO.output(StepPin_2, GPIO.LOW)
+            GPIO.output(StepPin_3, GPIO.LOW)
+            
             time.sleep(Pulse_width)
     else:
         return
 
-def Place():
+def Place(results):
     # Take in coordinates to move motors to place the corks. Z axis will be fixed values.
     return
 
