@@ -189,3 +189,8 @@ def capture_and_detect():
         
         # Return all distances and x, y differences
         return (dist1, dx1, dy1), (dist2, dx2, dy2), (dist3, dx3, dy3), (dist4, dx4, dy4)
+
+
+if __name__ == "__main__":
+    main()
+
