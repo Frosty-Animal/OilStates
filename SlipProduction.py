@@ -52,6 +52,7 @@ def main():
             while counter < 4:
                 Pickup()
                 Place()
+                counter += 1
             # Step 3: Use coordinates to Pickup and Place corks
             # Step 4: Check to make sure Task is complete from this and glueing station
             # Reapeat 3 more times untill all 4 holes are plugged in
