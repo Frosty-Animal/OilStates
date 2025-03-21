@@ -21,9 +21,9 @@ CCW_Direction = 1
 Circle_Positions = (dist1,dist2,dist3,dist4)
 Pulse_width = .000003 # PWM speed
 Belt_Stopped = 37 # Pin Number
-PickupSteps1 = 0 # change to some predeeturmined amount(Need to do fine tuning)
-PickupSteps2 = 0 # change to some predeeturmined amount(Need to do fine tuning)
-PickupSteps3 = 0 # change to some predeeturmined amount(Need to do fine tuning)
+PickupSteps1 = 0 # change to some predetermined amount(Need to do fine tuning)
+PickupSteps2 = 0 # change to some predetermined amount(Need to do fine tuning)
+PickupSteps3 = 0 # change to some predetermined amount(Need to do fine tuning)
 counter = 0
 
 GPIO.setmode(GPIO.BCM)
