@@ -4,187 +4,159 @@ from picamera2 import Picamera2
 import time
 import pigpio
 import RPi.GPIO as GPIO
+import random
+import os
 
+# ——— Pin Definitions ———
+LimitSwitch_M1 = 25
+LimitSwitch_M2 = 24
+LimitSwitch_M3 = 23
+Belt_Stopped    = 37
 
-LimitSwitch_M1 = 25 # Pin Number
-LimitSwitch_M2 = 24 # Pin Number
-LimitSwitch_M3 = 23 # Pin Number
-OperationComplete =  False
-StepPin_1 = 18 # Pin Number
-StepPin_2 = 12 # Pin Number
-StepPin_3 =  20 # Pin Number
-DirPin_1 = 19 # Pin Number 
-DirPin_2 = 13 # Pin Number
-DirPin_3 = 21 # Pin Number
-CW_Direction = 0
+StepPin_1 = 18
+StepPin_2 = 12
+StepPin_3 = 20
+DirPin_1  = 19
+DirPin_2  = 13
+DirPin_3  = 21
+
+CW_Direction  = 0
 CCW_Direction = 1
-Circle_Positions = (dist1,dist2,dist3,dist4)
-Pulse_width = .000003 # PWM speed
-Belt_Stopped = 37 # Pin Number
-PickupSteps1 = 0 # change to some predeeturmined amount(Need to do fine tuning)
-PickupSteps2 = 0 # change to some predeeturmined amount(Need to do fine tuning)
-PickupSteps3 = 0 # change to some predeeturmined amount(Need to do fine tuning)
-counter = 0
+Pulse_width   = .000003  # PWM speed
+
+# ——— Calibration ———
+# TODO: set this to your mm (or pixel) → step count conversion
+STEPS_PER_UNIT = 1  
+
+# ——— GPIO Setup ———
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(DirPin_1, GPIO.OUT)
-GPIO.setup(StepPin_1, GPIO.OUT)
-GPIO.setup(DirPin_2, GPIO.OUT)
-GPIO.setup(StepPin_2, GPIO.OUT)
-GPIO.setup(DirPin_3, GPIO.OUT)
-GPIO.setup(StepPin_3, GPIO.OUT)
+for pin in (DirPin_1, DirPin_2, DirPin_3, StepPin_1, StepPin_2, StepPin_3):
+    GPIO.setup(pin, GPIO.OUT)
 
-def main():
-    global Homed
-    while True:
-        
-        # Step 1: Home motors
-        if not Homed:
-            Homed = home() 
-        else:
-            # Step 2: Await belt to stop and get coordinates of holes
-            if GPIO.input(Belt_Stopped): 
-                results = capture_and_detect()
-                print(results)
-            
-            while counter < 4:
-                Pickup()
-                Place()
-            # Step 3: Use coordinates to Pickup and Place corks
-            # Step 4: Check to make sure Task is complete from this and glueing station
-            # Reapeat 3 more times untill all 4 holes are plugged in
-            
+# ——— Piecewise‐concurrent step function ———
+def step_parallel(steps1, steps2, steps3):
+    # set direction for each
+    dirs = (
+        (DirPin_1, steps1),
+        (DirPin_2, steps2),
+        (DirPin_3, steps3),
+    )
+    for dir_pin, s in dirs:
+        GPIO.output(dir_pin, CW_Direction if s >= 0 else CCW_Direction)
+
+    # interleave pulses
+    total = max(abs(steps1), abs(steps2), abs(steps3))
+    for i in range(total):
+        if i < abs(steps1): GPIO.output(StepPin_1, GPIO.HIGH)
+        if i < abs(steps2): GPIO.output(StepPin_2, GPIO.HIGH)
+        if i < abs(steps3): GPIO.output(StepPin_3, GPIO.HIGH)
+
+        time.sleep(Pulse_width)
+
+        GPIO.output(StepPin_1, GPIO.LOW)
+        GPIO.output(StepPin_2, GPIO.LOW)
+        GPIO.output(StepPin_3, GPIO.LOW)
+
+        time.sleep(Pulse_width)
+
+# ——— Homing routine ———
 def home():
-
-    # Move all motors towards their limit switches
     GPIO.output(DirPin_1, CCW_Direction)
     GPIO.output(DirPin_2, CCW_Direction)
     GPIO.output(DirPin_3, CCW_Direction)
 
-    homed_1, homed_2, homed_3 = False, False, False
+    homed = [False, False, False]
+    while not all(homed):
+        if not homed[0]:
+            GPIO.output(StepPin_1, GPIO.HIGH); time.sleep(Pulse_width)
+            GPIO.output(StepPin_1, GPIO.LOW);  time.sleep(Pulse_width)
+            if GPIO.input(LimitSwitch_M1): homed[0] = True
 
-    while not (homed_1 and homed_2 and homed_3):
-        if not homed_1:
-            GPIO.output(StepPin_1, GPIO.HIGH)
-            time.sleep(Pulse_width)
-            GPIO.output(StepPin_1, GPIO.LOW)
-            time.sleep(Pulse_width)
-            if GPIO.input(LimitSwitch_M1):  
-                homed_1 = True
-        
-        if not homed_2:
-            GPIO.output(StepPin_2, GPIO.HIGH)
-            time.sleep(Pulse_width)
-            GPIO.output(StepPin_2, GPIO.LOW)
-            time.sleep(Pulse_width)
-            if GPIO.input(LimitSwitch_M2):
-                homed_2 = True
-        
-        if not homed_3:
-            GPIO.output(StepPin_3, GPIO.HIGH)
-            time.sleep(Pulse_width)
-            GPIO.output(StepPin_3, GPIO.LOW)
-            time.sleep(Pulse_width)
-            if GPIO.input(LimitSwitch_M3):
-                homed_3 = True
+        if not homed[1]:
+            GPIO.output(StepPin_2, GPIO.HIGH); time.sleep(Pulse_width)
+            GPIO.output(StepPin_2, GPIO.LOW);  time.sleep(Pulse_width)
+            if GPIO.input(LimitSwitch_M2): homed[1] = True
 
-    Homed = True
-    return Homed
+        if not homed[2]:
+            GPIO.output(StepPin_3, GPIO.HIGH); time.sleep(Pulse_width)
+            GPIO.output(StepPin_3, GPIO.LOW);  time.sleep(Pulse_width)
+            if GPIO.input(LimitSwitch_M3): homed[2] = True
 
+    return True
+
+# ——— Pickup Z (down/up) ———
 def Pickup():
-    task_completed = False
-    if(task_completed == False):
-        Totalsteps = max(PickupSteps1,PickupSteps2,PickupSteps3)
-        for i in range(Totalsteps):
-            if i < PickupSteps1:
-                GPIO.output(StepPin_1, GPIO.HIGH)
-            if i < PickupSteps2:
-                GPIO.output(StepPin_2, GPIO.HIGH)
-            if i < PickupSteps3:
-                GPIO.output(StepPin_3, GPIO.HIGH)
-        
-            time.sleep(Pulse_width) 
-            
-            GPIO.output(StepPin_1, GPIO.LOW)
-            GPIO.output(StepPin_2, GPIO.LOW)
-            GPIO.output(StepPin_3, GPIO.LOW)
-            
-            time.sleep(Pulse_width)
-    else:
-        return
+    # move Z down then up
+    GPIO.output(DirPin_3, CCW_Direction)
+    step_parallel(0, 0, PickupSteps3 := 100)  # adjust steps
+    GPIO.output(DirPin_3, CW_Direction)
+    step_parallel(0, 0, PickupSteps3)
 
+# ——— Place at detected holes ———
 def Place(results):
-    # Take in coordinates to move motors to place the corks. Z axis will be fixed values.
-    return
+    # results is tuple of four (dist, dx, dy)
+    for (_, dx, dy) in results:
+        # convert to steps
+        steps1 = int(dx * STEPS_PER_UNIT)
+        steps2 = int(dy * STEPS_PER_UNIT)
+        # move X & Y in parallel
+        step_parallel(steps1, steps2, 0)
+        # drop & retract Z
+        Pickup()
 
+# ——— Computer vision ———
 def capture_and_detect():
-    
-    
-    # Initialize the camera
     try:
         picam2 = Picamera2()
         picam2.start()
         frame = picam2.capture_array()
         picam2.close()
-    except RuntimeError as e:
-        print(f"Camera error: {e}")
+    except RuntimeError:
         time.sleep(0.5)
         return capture_and_detect()
 
-    # Convert the image to BGR format for OpenCV
     img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    gray = cv2.medianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 11)
+    blk  = cv2.adaptiveThreshold(gray, 255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY, 51, -2)
 
-    # Get image dimensions
-    img_height, img_width = img.shape[:2]
+    circles = cv2.HoughCircles(blk, cv2.HOUGH_GRADIENT, 1, 75,
+                param1=110, param2=13,
+                minRadius=25, maxRadius=37)
+    if circles is None or len(circles[0]) < 4:
+        return None
 
-    # Convert to grayscale and apply thresholding
-    blk = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blk = cv2.medianBlur(blk, 11)
-    blk = cv2.adaptiveThreshold(blk, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, -2)
+    circles = np.uint16(np.around(circles))[0,:4]
+    pts = sorted([(c[0],c[1]) for c in circles], key=lambda p: (p[1],p[0]))
+    (c1,c2,c3,c4) = pts
+    # compute distances & deltas
+    def dist(a,b): return np.linalg.norm(np.array(a)-np.array(b))
+    d1,dx1,dy1 = dist(c1,c2), c2[0]-c1[0], c2[1]-c1[1]
+    d2,dx2,dy2 = dist(c2,c3), c3[0]-c2[0], c3[1]-c2[1]
+    d3,dx3,dy3 = dist(c3,c4), c4[0]-c3[0], c4[1]-c3[1]
+    d4,dx4,dy4 = dist(c4,c1), c1[0]-c4[0], c1[1]-c4[1]
 
-    # Find circles using HoughCircles
-    circles = cv2.HoughCircles(blk, cv2.HOUGH_GRADIENT, 1, 75, param1=110, param2=13, minRadius=25, maxRadius=37)
+    return ((d1,dx1,dy1),
+            (d2,dx2,dy2),
+            (d3,dx3,dy3),
+            (d4,dx4,dy4))
 
-    if circles is not None and len(circles[0]) >= 4:
-        circles = np.uint16(np.around(circles))
-        print(f"{len(circles[0])} circles detected!")
+# ——— Main loop ———
+def main():
+    Homed = False
+    while True:
+        if not Homed:
+            Homed = home()
+        else:
+            if GPIO.input(Belt_Stopped):
+                results = capture_and_detect()
+                if results:
+                    Place(results)
+                    # return home after placing all 4
+                    step_parallel(-sum(r[1] for r in results),
+                                   -sum(r[2] for r in results), 0)
+        time.sleep(0.1)
 
-        # Collect circle positions
-        circle_positions = [(circle[0], circle[1]) for circle in circles[0, :4]]
-
-        # Sort the circles for consistent ordering
-        circle_positions = sorted(circle_positions, key=lambda p: (p[1], p[0]))
-
-        # Extract individual positions
-        c1, c2, c3, c4 = circle_positions
-
-        cv2.circle(img, (int(c1[0]), int(c1[1])), 5, (0, 255, 0), -1)
-        cv2.circle(img, (int(c2[0]), int(c2[1])), 5, (0, 255, 0), -1)
-        cv2.circle(img, (int(c3[0]), int(c3[1])), 5, (0, 255, 0), -1)
-        cv2.circle(img, (int(c4[0]), int(c4[1])), 5, (0, 255, 0), -1)
-
-        cv2.line(img, (int(c1[0]), int(c1[1])), (int(c2[0]), int(c2[1])), (255, 0, 0), 2)
-        cv2.line(img, (int(c2[0]), int(c2[1])), (int(c3[0]), int(c3[1])), (255, 0, 0), 2)
-        cv2.line(img, (int(c3[0]), int(c3[1])), (int(c4[0]), int(c4[1])), (255, 0, 0), 2)
-        cv2.line(img, (int(c4[0]), int(c4[1])), (int(c1[0]), int(c1[1])), (255, 0, 0), 2)
-        
-        # Calculate total distances
-        dist1 = np.linalg.norm(np.array(c1) - np.array(c2))  
-        dist2 = np.linalg.norm(np.array(c2) - np.array(c3)) 
-        dist3 = np.linalg.norm(np.array(c3) - np.array(c4))
-        dist4 = np.linalg.norm(np.array(c4) - np.array(c1))
-
-        # Calculate x and y differences
-        dx1, dy1 = c2[0] - c1[0], c2[1] - c1[1]
-        dx2, dy2 = c3[0] - c2[0], c3[1] - c2[1]
-        dx3, dy3 = c4[0] - c3[0], c4[1] - c3[1]
-        dx4, dy4 = c1[0] - c4[0], c1[1] - c4[1]
-        print(f"Dist1: {dist1:.2f}, Dist2: {dist2:.2f}, Dist3: {dist3:.2f}, Dist4: {dist4:.2f}")
-        
-        #Display the distances on the image
-        cv2.putText(img, f"{dist1:.2f}", (int((c1[0] + c2[0]) / 2 + 20), int((c1[1] + c2[1]) / 2 + 20)), cv2.FONT_HERSHEY_COMPLEX, 1.0, (255, 255, 0))
-        cv2.putText(img, f"{dist2:.2f}", (int((c2[0] + c3[0]) / 2 + 20), int((c2[1] + c3[1]) / 2 + 20)), cv2.FONT_HERSHEY_COMPLEX, 1.0, (255, 0, 255))
-        cv2.putText(img, f"{dist3:.2f}", (int((c3[0] + c4[0]) / 2 + 20), int((c3[1] + c4[1]) / 2 + 20)), cv2.FONT_HERSHEY_COMPLEX, 1.0, (255, 255, 255))
-        cv2.putText(img, f"{dist4:.2f}", (int((c4[0] + c1[0]) / 2 + 20), int((c4[1] + c1[1]) / 2 + 20)), cv2.FONT_HERSHEY_COMPLEX, 1.0, (0, 255, 255.))
-        
-        # Return all distances and x, y differences
-        return (dist1, dx1, dy1), (dist2, dx2, dy2), (dist3, dx3, dy3), (dist4, dx4, dy4)
+if __name__ == "__main__":
+    main()

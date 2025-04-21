@@ -3,6 +3,7 @@ import random
 import os
 #this current model aims to simulate controlling motors via step-wise concurrency opposed to true concurrency.
 #this approach is take to avoid complex programming that may overwork the rpi cpu and maintain parrallel movement
+
 # --- Motor movement and pickup functions ---
 def move_motor_to_target(motor1_x, motor2_y, motor3_z, target, target_x, target_y):
     while (motor1_x, motor2_y) != (target_x, target_y):
