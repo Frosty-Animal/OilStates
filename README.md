@@ -1,1 +1,1 @@
-Open with visula studio code
+Open with visual studio code
